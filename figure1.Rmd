@@ -1,0 +1,49 @@
+---
+title: "figure1"
+author: "JuHyeongYu"
+date: "2026-03-09"
+output: html_document
+---
+
+```{r}
+library(cowplot)
+library(grid)
+
+# 1. Canvas Initialization
+final_figure_1_page <- ggdraw() +
+  
+# 2. Top Tier: Fig 1a & Fig 1b
+
+draw_plot(fig1a, x = 0.03, y = 0.67, width = 0.70, height = 0.30) +
+  draw_label("a", x = 0.03, y = 0.94, size = 30, fontface = "bold") +
+  
+  # Placeholder for blank figure 1b
+  draw_label("Fig 1b", x = 0.85, y = 0.80, size = 15, fontface = "bold", color = "grey70") +
+  draw_label("b", x = 0.74, y = 0.94, size = 30, fontface = "bold") +
+  
+
+# 3. Middle Tier: Fig 1c (Expanded Heatmap)
+
+draw_grob(fig1c, x = 0.05, y = 0.30, width = 0.8, height = 0.38) +
+  draw_label("c", x = 0.03, y = 0.65, size = 30, fontface = "bold") +
+  
+# 4. Bottom Tier: Fig 1d & Fig 1e
+
+draw_plot(fig1d, x = 0.05, y = 0.02, width = 0.35, height = 0.30) +
+  draw_label("d", x = 0.03, y = 0.32, size = 30, fontface = "bold") +
+  
+  draw_plot(fig1e, x = 0.42, y = 0.02, width = 0.68, height = 0.30) +
+  draw_label("e", x = 0.42, y = 0.32, size = 30, fontface = "bold")
+
+# 5. save & Export
+
+ggsave("Figure1_Final.pdf", 
+       final_figure_1_page, 
+       width = 24, 
+       height = 28, 
+       units = "in", 
+       dpi = 600,
+       device = cairo_pdf) # Use cairo_pdf 
+
+```
+

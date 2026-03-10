@@ -1,0 +1,530 @@
+---
+title: "Figure 1c"
+author: "JuHyeongYu"
+date: "2026-03-07"
+output: html_document
+---
+Figure 1c
+
+```{r}
+# load required packages
+
+library(dplyr)
+library(ComplexHeatmap)
+library(circlize)
+library(RColorBrewer)
+library(viridis)
+library(grid)
+
+# Load the data from Supplementary Data 1
+
+suppl1_a <- read_excel('/Users/zzuhyeong2/Documents/JoonAhn_Lab/Project1/41467_2024_54434_MOESM5_ESM.xlsx', sheet = 1)
+
+# 1. Data Preprocessing
+anno_df <- suppl1_a %>%
+    arrange(Subtype, desc(Subtype.membership)) %>%
+      mutate(
+        # a. Subtype
+        Subtype = as.character(Subtype),
+    
+        # b. Subtype Core 
+        `Subtype Core` = ifelse(Subtype.membership <= 0.5, "N", "Y"),
+    
+        # c. Subtype Membership
+        `Subtype Membership` = Subtype.membership,
+    
+        # d. Histology 
+        Histology = DX,
+    
+        # e. Age
+        Age = case_when(
+          Age == "31-40" ~ 40,
+          Age == "41-50" ~ 50,
+          Age == "51-60" ~ 60,
+          Age == "61-70" ~ 70,
+          Age == "71-80" ~ 80,
+          Age == "81-90" ~ 90,
+          Age == "91-100" ~ 100
+        ),
+    
+        # f. Sex
+        Sex = Sex,
+    
+        # g. Smoking
+        Smoking = case_when(
+          Smoking.history == "Cr" ~ "Cr",
+          Smoking.history == "Ex" ~ "Ex",
+          Smoking.history == "N" ~ "N",
+          TRUE ~ NA_character_
+        ),
+    
+        # h. TNMstage 
+        TNMstage = AJCC.8th.TNMstage,
+    
+        # i. Pathologic N
+        `Pathologic N` = Pathologic.N,
+    
+        # j. Adjuvant Treatment
+        `Adjuvant Treatment` = Adjuvant.Treatment,
+    
+        # k. Recurrence status
+        `Recurrence status` = case_when(
+           Recur.status == 1 ~ "Y",
+          Recur.status == 0 ~ "N",
+          TRUE ~ "NA"
+        ),
+    
+        # l. TIL pattern 
+        `TIL pattern` = TIL.pattern,
+    
+        # m. Immune Cluster
+        `Immune Cluster` = case_when(
+          Celltype.based.subtype == "Cold_Immunogram" ~ "Cold",
+          Celltype.based.subtype == "Hot_Immunogram" ~ "Hot",
+          is.na(Celltype.based.subtype) ~ "Unknown",
+          TRUE ~ "Unknown"
+        ),
+    
+        # n. Whole Genome Doubling
+        `Whole Genome Doubling` = case_when(
+          WGD == TRUE ~ "Y",
+          WGD == FALSE ~ "N",
+          is.na(WGD) ~ "N",
+          TRUE ~ "N"
+        ),
+    
+        # o. TP53
+        TP53 = case_when(
+          TP53 == "Mut+CNV.loss" ~ "Truncating Mutation + CN loss",
+          TP53 == "Mutation" ~ "Truncating Mutation",
+          TP53 == "Not.altered" ~ "Not altered",
+          TRUE ~ as.character(TP53)
+        ),
+    
+        # p. Other Tumor Suppressor genes
+        `Other Tumor Suppressor genes` = case_when(
+          Other.TSG == "Mut+CNV.loss" ~ "Truncating Mutation + CN loss",
+          Other.TSG == "Mutation" ~ "Truncating Mutation",
+          Other.TSG == "Not.altered" ~ "Not altered",
+          Other.TSG == "CNV.loss" ~ "Copy number loss (CN loss)",
+          TRUE ~ as.character(Other.TSG)
+          ),
+    
+        # q. EGFR
+        EGFR = case_when(
+          EGFR == "exon19_del" ~ "Exon19 del",
+          EGFR == "None" ~ "None",
+          EGFR == "Others_Indel" ~ "Other Indels",
+          EGFR == "Others_SNV" ~ "Other SNVs",
+          EGFR == "L858R" ~ "L858R",
+          TRUE ~ as.character(EGFR)
+        ),
+    
+        # r. Other oncogene alteration 
+        `Other oncogene alteration` = ifelse(
+          Other.Oncogene == "KRAS_PIK3CA", 
+          "KRAS+PIK3CA", 
+          Other.Oncogene
+      )) %>%
+  
+      # s. Annotation order
+      select(
+        Subtype, `Subtype Core`, `Subtype Membership`, Histology, Age, Sex, 
+        Smoking, TNMstage, `Pathologic N`, `Adjuvant Treatment`, `Recurrence status`, 
+        `TIL pattern`, `Immune Cluster`, `Whole Genome Doubling`, TP53, 
+        `Other Tumor Suppressor genes`, EGFR, `Other oncogene alteration`
+      ) %>%
+  
+  as.data.frame() # ComplexHeatmap input
+```
+
+```{r}
+
+# 2. Dynamic Palette Generation
+
+# a. TNM Stage: Continuous color change from yellow to purple
+tnm_levels <- c("IA1", "IA2", "IA3", "IB", "IIA", "IIB", "IIIA", "IIIB", "IVA")
+tnm_colors <- setNames(viridis(n = length(tnm_levels), direction = -1), tnm_levels)
+
+# b. Histology: Match with Figure 1a
+dx_levels <- na.omit(unique(anno_df$Histology))
+dx_colors <- setNames(colorRampPalette(brewer.pal(8, "Dark2"))(length(dx_levels)), dx_levels)
+
+# 3. Manual Color List Creation
+
+# a. Continuous color change for TIL Pattern (Ivory -> Dark Brown)
+
+til_colors <- c(
+  "absent" = "#DDD1B6",                # Ivory
+  "non-brisk multifocal" = "#BFAF95",  # Burlywood (Light Brown)
+  "brisk band-like" = "#866038",       # Sienna (Medium Brown)
+  "brisk diffuse" = "#5C4028",         # Dark Brown
+  "Unknown" = "grey80"                 # Dark Gray
+)
+
+# b. Common colors for mutations (TP53, TSG)
+mut_colors <- c(
+  "Not altered" = "white",
+  "Copy number loss (CN loss)" = "#FF6699",               # Rose
+  "Truncating Mutation" = "#E6D690",                      # Dark Ivory
+  "Truncating Mutation + CN loss" = "#8B4513"             # Brown
+)
+
+age_colors <- circlize::colorRamp2(
+  c(35, 95),
+  c("#F7F7F7", "#252525")
+)
+
+# c. Assemble the final comprehensive color list
+col_list <- list(
+  # Tracks 1~3: Subtype related
+  Subtype = c("1"="#FFB6C1", "2"="#E6E6FA", "3"="#FFFACD", "4"="#A8E6CF", "5"="#87CEEB"), # Pink, Light Purple, Yellow, Mint, Sky Blue
+  `Subtype Core` = c("Y" = "black", "N" = "white"),
+  `Subtype Membership` = colorRamp2(c(0.3, 1), c("#FFF5EE", "#FF8C00")), # Orangey White -> Dark Orange
+  
+  # d. Tracks 4~10: Clinical Information 1
+  Histology = dx_colors,
+  Age = age_colors, # Darkening based on age group
+  Sex = c("F"="#A6DBEA", "M"="#4A3082"), # Sky Blue, Dark Purple
+  Smoking = c("Cr"="#8B4513", "Ex"="#FFA500", "N"="gray95"), # Brown, Orange, Light Gray (distinct from na_col grey90)
+  TNMstage = tnm_colors,
+  `Pathologic N` = c("N0" = "#E2E2E2", "N1" = "#9A9A71", "N2" = "#B06A73"), # Light Gray, Olive, Dark Rose
+  `Adjuvant Treatment` = c("None"="grey80", "CTx"="#5D8AA8", "RTx"="darkred", "CTx & RTx"="#4F3E81"),
+  
+  # e. Tracks 11~14: Clinical Information 2
+  `Recurrence status` = c("Y"="#E17070", "N"="#C0C0C0", "NA" = "grey90"), # Light Rose, Dark Gray
+  `TIL pattern` = til_colors,
+  `Immune Cluster` = c("Cold"="#5CA6C1", "Hot"="#FFB6C1", "Unknown" = "white"), # Light Blue, Light Rose
+  `Whole Genome Doubling` = c("Y"="black", "N"="white"),
+  
+  # f. Tracks 15~18: Genomic Alterations
+  EGFR = c(
+    "Exon19 del"   = "#9C373C",
+    "Other Indels" = "#D67141",
+    "Other SNVs"   = "#4F7FA7",
+    "L858R"        = "#ABB14B",
+    "None"         = "white"  
+  ),
+  `Other oncogene alteration` = c(
+    "ALK" = "#9D3248","ERBB2" = "#5F3E83", "KRAS" = "#395D54", "PIK3CA" = "#EA6737", "KRAS+PIK3CA" = "#934C31", "MET" = "#706B6D", "ROS1" = "#43408B", "RET" = "#533529", "None" = "white"    
+  ),
+  TP53 = mut_colors,
+  `Other Tumor Suppressor genes` = mut_colors
+)
+
+# 4. Annotation Object Creation and Output
+
+# subtype 라벨
+subtype_labels <- c(
+  "1" = "Subtype 1 \n (n = 55, 24.0%) \n Metabolic",
+  "2" = "Subtype 2 \n (n = 45, 19.7%) \n Alveolar-like",
+  "3" = "Subtype 3 \n (n = 52, 22.7%) \n Proliferative",
+  "4" = "Subtype 4 \n (n = 43, 18.7%) \n Hypoxic",
+  "5" = "Subtype 5 \n (n = 34, 14.8%) \n Immunogenic"
+)
+
+top_anno <- HeatmapAnnotation(
+  df = anno_df,
+  subtype_block = anno_block(
+    gp = gpar(fill = "white", col = "white", lwd = 1),
+    labels = subtype_labels[unique(as.character(anno_df$Subtype))],
+    labels_gp = gpar(fontsize = 9, fontface = "bold"),
+    height = unit(10, "mm")
+  ),
+  col = col_list,
+  gp = gpar(col = "black", lwd = 0.5),
+  na_col = "grey80",
+  annotation_name_side = "right",
+  show_legend = FALSE
+)
+
+# 5. Initialize the canvas and force output
+
+heatmap <- Heatmap(matrix(NA, nrow = 1, ncol = nrow(anno_df)), 
+        top_annotation = top_anno,
+        cluster_columns = FALSE,          
+        column_split = anno_df$Subtype,   
+        column_gap = unit(2, "mm"),
+        show_row_names = FALSE,
+        show_heatmap_legend = FALSE,
+        rect_gp = gpar(col = NA, fill = NA),
+        height = unit(0.01, "mm"),
+        column_title = NULL)
+
+```
+
+```{r}
+
+# 6. Individual legends
+
+lgd_subtype <- Legend(
+  title = "Subtype",
+  at = names(col_list$Subtype),
+  legend_gp = gpar(fill = col_list$Subtype),
+  ncol = 1,
+  border = "black"
+)
+
+lgd_subtype_core <- Legend(
+  title = "Subtype Core",
+  at = c("Y", "N"),
+  legend_gp = gpar(fill = col_list$`Subtype Core`[c("Y", "N")]),
+  ncol = 1,
+  border = "black"
+)
+
+subtype_membership_breaks <- rev(c(0.3, 0.5, 0.7, 1.0))
+subtype_membership_cols <- col_list$`Subtype Membership`(subtype_membership_breaks)
+
+lgd_subtype_membership <- Legend(
+  title = "Subtype\nMembership",
+  at = c("1", " ", " ", "0.3"),
+  legend_gp = gpar(fill = subtype_membership_cols),
+  ncol = 1,
+  border = "black")
+
+lgd_histology <- Legend(
+  title = "Histology",
+  at = names(col_list$Histology),
+  legend_gp = gpar(fill = col_list$Histology),
+  ncol = 1,
+  border = "black"
+)
+
+age_legend_cols <- rev(c("#F7F7F7", "#BDBDBD", "#737373", "#252525"))
+
+lgd_age <- Legend(
+  title = "Age",
+  at = c("90", "", "", "30"),
+  legend_gp = gpar(fill = age_legend_cols),
+  ncol = 1,
+  border = "black"
+)
+
+lgd_sex <- Legend(
+  title = "Sex",
+  at = names(col_list$Sex),
+  legend_gp = gpar(fill = col_list$Sex),
+  ncol = 1,
+  border = "black"
+)
+
+lgd_smoking <- Legend(
+  title = "Smoking",
+  at = names(col_list$Smoking),
+  legend_gp = gpar(fill = col_list$Smoking),
+  ncol = 1,
+  border = "black"
+)
+
+lgd_tnm <- Legend(
+  title = "TNM Stage",
+  at = names(col_list$TNMstage),
+  legend_gp = gpar(fill = col_list$TNMstage),
+  ncol = 1,
+  border = "black"
+)
+
+lgd_pathN <- Legend(
+  title = "Pathologic N",
+  at = names(col_list$`Pathologic N`),
+  legend_gp = gpar(fill = col_list$`Pathologic N`),
+  ncol = 1,
+  border = "black"
+)
+
+lgd_adj <- Legend(
+  title = "Adjuvant Treatment",
+  at = names(col_list$`Adjuvant Treatment`),
+  legend_gp = gpar(fill = col_list$`Adjuvant Treatment`),
+  ncol = 1,
+  border = "black"
+)
+
+lgd_recur <- Legend(
+  title = "Recurrence Status",
+  at = names(col_list$`Recurrence status`),
+  legend_gp = gpar(fill = col_list$`Recurrence status`),
+  ncol = 1,
+  border = "black"
+)
+
+lgd_immune <- Legend(
+  title = "Immune Cluster",
+  at = names(col_list$`Immune Cluster`),
+  legend_gp = gpar(fill = col_list$`Immune Cluster`),
+  ncol = 1,
+  border = "black"
+)
+
+lgd_til <- Legend(
+  title = "TIL Pattern",
+  at = names(col_list$`TIL pattern`),
+  legend_gp = gpar(fill = col_list$`TIL pattern`),
+  ncol = 1,
+  border = "black"
+)
+
+lgd_wgd <- Legend(
+  title = "WGD",
+  at = c("Y", "N"),
+  legend_gp = gpar(fill = col_list$`Whole Genome Doubling`[c("Y", "N")]),
+  ncol = 1,
+  border = "black"
+)
+
+lgd_tp53 <- Legend(
+  title = "TP53",
+  at = names(col_list$TP53),
+  legend_gp = gpar(fill = col_list$TP53),
+  ncol = 1,
+  border = "black"
+)
+
+lgd_tsg <- Legend(
+  title = "Other Tumor\nSuppressor Genes",
+  at = names(col_list$`Other Tumor Suppressor genes`),
+  legend_gp = gpar(fill = col_list$`Other Tumor Suppressor genes`),
+  ncol = 1,
+  border = "black"
+)
+
+lgd_egfr <- Legend(
+  title = "EGFR",
+  at = names(col_list$EGFR),
+  legend_gp = gpar(fill = col_list$EGFR),
+  ncol = 1,
+  border = "black"
+)
+
+lgd_oncogene <- Legend(
+  title = "Other oncogene alteration",
+  at = names(col_list$`Other oncogene alteration`),
+  legend_gp = gpar(fill = col_list$`Other oncogene alteration`),
+  ncol = 2, nrow = 4,
+  border = "black"
+)
+```
+
+```{r}
+
+# 7. Pack legends by columns
+
+col1 <- packLegend(
+  lgd_subtype,
+  direction = "vertical",
+  gap = unit(3, "mm")
+)
+
+col2 <- packLegend(
+  lgd_subtype_core,
+  lgd_subtype_membership,
+  direction = "vertical",
+  gap = unit(5, "mm")
+)
+
+col3 <- packLegend(
+  lgd_histology,
+  lgd_age,
+  direction = "vertical",
+  gap = unit(5, "mm")
+)
+
+col4 <- packLegend(
+  lgd_sex,
+  lgd_smoking,
+  direction = "vertical",
+  gap = unit(5, "mm")
+)
+
+col5 <- packLegend(
+  lgd_tnm,
+  direction = "vertical",
+  gap = unit(3, "mm")
+)
+
+col6 <- packLegend(
+  lgd_pathN,
+  lgd_adj,
+  direction = "vertical",
+  gap = unit(5, "mm")
+)
+
+col7 <- packLegend(
+  lgd_recur,
+  lgd_immune,
+  direction = "vertical",
+  gap = unit(5, "mm")
+)
+
+col8 <- packLegend(
+  lgd_til,
+  lgd_wgd,
+  direction = "vertical",
+  gap = unit(5, "mm")
+)
+
+col9 <- packLegend(
+  lgd_tp53,
+  lgd_tsg,
+  direction = "vertical",
+  gap = unit(5, "mm")
+)
+
+col10 <- packLegend(
+  lgd_egfr,
+  lgd_oncogene,
+  direction = "vertical",
+  gap = unit(5, "mm")
+)
+
+# Final packing
+
+legend_row <- packLegend(
+  col1, col2, col3, col4, col5,
+  col6, col7, col8, col9, col10,
+  direction = "horizontal",
+  gap = unit(8, "mm")
+)
+
+```
+
+
+```{r}
+
+# 8. Plotting
+
+png("Figure_1c.png", width = 5000, height = 2500, res = 300)
+
+# heatmap grob
+ht_grob <- grid.grabExpr(
+  draw(heatmap, newpage = FALSE)
+)
+
+grid.newpage()
+
+pushViewport(viewport(
+  layout = grid.layout(
+    nrow = 2, ncol = 1,
+    heights = unit.c(unit(0.60, "npc"), unit(0.40, "npc"))
+  )
+))
+
+# heatmap + label 
+pushViewport(viewport(layout.pos.row = 1))
+grid.draw(ht_grob)
+
+upViewport()
+
+# legend
+pushViewport(viewport(layout.pos.row = 2))
+draw(
+  legend_row,
+  x = unit(0.02, "npc"),
+  y = unit(0.98, "npc"),
+  just = c("left", "top")
+)
+upViewport(2)
+
+dev.off()
+```

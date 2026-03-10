@@ -1,0 +1,143 @@
+---
+title: "Figure 1e"
+author: "JuHyeongYu"
+date: "2026-03-08"
+output: html_document
+---
+```{r}
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(ggnewscale)
+library(ggpubr)
+library(cowplot)
+library(grid)
+
+# 1. Data Loading & Harmonization
+file_path <- '/Users/zzuhyeong2/Documents/JoonAhn_Lab/Project1/41467_2024_54434_MOESM5_ESM.xlsx'
+
+# Load and align schemas for Global and Phospho datasets
+sheet3_raw <- read_excel(file_path, sheet = 3) %>% select(-1) %>% mutate(Source_Type = "Global Proteome")
+sheet4_raw <- read_excel(file_path, sheet = 4) %>% mutate(Source_Type = "Phosphoproteome")
+combined_raw <- bind_rows(sheet3_raw, sheet4_raw)
+
+# 2. Target Pathway Mapping
+target_mapping <- c(
+  "GOCC_MITOCHONDRIAL_MATRIX" = "Subtype 1", "HALLMARK_OXIDATIVE_PHOSPHORYLATION" = "Subtype 1",
+  "GOBP_CELLULAR_RESPIRATION" = "Subtype 1", "PATH-NP_EGFR1_PATHWAY" = "Subtype 2",
+  "PATH-NP_IL33_PATHWAY" = "Subtype 2", "PATH-NP_NOTCH_PATHWAY" = "Subtype 2",
+  "KINASE-PSP_CDK2" = "Subtype 3", "HALLMARK_E2F_TARGETS" = "Subtype 3",
+  "HALLMARK_G2M_CHECKPOINT" = "Subtype 3", "GOCC_SECRETORY_GRANULE" = "Subtype 4",
+  "REACTOME_NEUTROPHIL_DEGRANULATION" = "Subtype 4", "HALLMARK_HYPOXIA" = "Subtype 4",
+  "PATH-WP_PI3K-Akt_Signaling_Pathway" = "Subtype 4", "HALLMARK_ALLOGRAFT_REJECTION" = "Subtype 5",
+  "HALLMARK_TNFA_SIGNALING_VIA_NFKB" = "Subtype 5"
+)
+
+# 3. Data Preprocessing & Signal-based Selection
+p_1e_data <- combined_raw %>%
+  filter(Pathway %in% names(target_mapping)) %>%
+  group_by(Pathway) %>%
+  # Select Source_Type with the strongest absolute Z-score sum across all subtypes
+  mutate(row_signal = rowSums(abs(across(where(is.numeric))), na.rm = TRUE)) %>%
+  slice_max(order_by = row_signal, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  pivot_longer(cols = starts_with("Median.Subtype"), names_to = "Subtype_raw", values_to = "Z_score") %>%
+  mutate(
+    Subtype_Num = gsub("Median.Subtype", "Subtype ", Subtype_raw),
+    is_main = ifelse(target_mapping[Pathway] == Subtype_Num, "Main", "Other"),
+    Pathway = factor(Pathway, levels = rev(names(target_mapping)))
+  )
+
+# Extract distinct markers for Y-axis side boxes
+source_marker_data <- p_1e_data %>% distinct(Pathway, Source_Type)
+
+# Color Palettes
+source_cols <- c("Global Proteome" = "#76A457", "Phosphoproteome" = "#D95F44")
+subtype_cols <- c("Subtype 1" = "#E1726C", "Subtype 2" = "#B3B2D6", "Subtype 3" = "#F6C845", "Subtype 4" = "#89C5B2", "Subtype 5" = "#7198C4")
+
+# 4. Main Plot Construction
+p_main <- ggplot(p_1e_data, aes(x = Z_score, y = Pathway)) +
+  annotate("rect", xmin = -Inf, xmax = 0, ymin = -Inf, ymax = Inf, fill = "grey75", alpha = 0.6) +
+  geom_vline(xintercept = 0, color = "#D13A2F", linewidth = 1.2) +
+  
+  # Y-axis side boxes (Data Type Markers)
+  geom_point(data = source_marker_data, aes(x = -10.9, y = Pathway, fill = Source_Type), 
+             shape = 22, size = 7, stroke = 0.45, color = "black", inherit.aes = FALSE) +
+  scale_fill_manual(values = source_cols, guide = "none") +
+  
+  new_scale_fill() +
+  # Z-score dots with conditional stroke highlighting for main subtypes
+  geom_point(aes(fill = Subtype_Num, color = is_main), shape = 21, size = 8, stroke = 1.1) +
+  scale_fill_manual(values = subtype_cols, guide = "none") +
+  scale_color_manual(values = c("Main" = "black", "Other" = "white"), guide = "none") +
+  
+  scale_x_continuous(breaks = seq(-10, 10, 5), limits = c(-13, 12.5), expand = c(0, 0)) +
+  theme_pubr() +
+  labs(x = "Z-score", y = NULL) +
+  
+  # Offset clipping to allow markers outside the panel boundary
+  coord_cartesian(xlim = c(-10.5, 12), clip = "off") +
+  theme(
+    axis.text.y = element_text(size = 10, margin = margin(r = 18)),
+    axis.ticks.length.y = unit(0.16, "cm"),
+    plot.margin = margin(10, 130, 30, 10),
+    legend.position = "none"
+  )
+
+# 5. Subtype Legend (Dummy Plot)
+legend_subtype_plot <- ggplot(data.frame(S = paste0("Subtype ", 1:5), x = 1, y = 1:5), aes(x, y, fill = S)) +
+  geom_point(shape = 21, size = 6, stroke = 1.1, color = "black") +
+  scale_fill_manual(values = subtype_cols, name = NULL) +
+  theme_void() +
+  theme(
+    legend.text = element_text(size = 12), 
+    legend.key.size = unit(0.6, "cm"), 
+    legend.key.height = unit(1, "cm")
+  )
+legend_subtype <- cowplot::get_legend(legend_subtype_plot)
+
+subtype_legend_box <- grobTree(
+  rectGrob(gp = gpar(fill = "white", col = "black", lwd = 1)),
+  legend_subtype
+)
+
+# 6. Source Legend (Dummy Plot)
+legend_source_plot <- ggplot(data.frame(ST = names(source_cols), x = 1, y = 1), aes(x, y, fill = ST)) +
+  geom_point(shape = 22, size = 4, stroke = 0.45, color = "black") +
+  scale_fill_manual(values = source_cols, name = NULL) +
+  theme_void() +
+  theme(legend.position = "bottom", legend.text = element_text(size = 11))
+legend_source <- cowplot::get_legend(legend_source_plot)
+
+source_legend_box <- grobTree(
+  rectGrob(gp = gpar(fill="white", col="black", lwd=1)),
+  legend_source
+)
+
+# 7. Final Assembly
+fig1e <- ggdraw() +
+  draw_plot(p_main, x = 0, y = 0.05, width = 0.8, height = 0.95) +
+  
+  # Subtype Legen
+  draw_grob(
+    subtype_legend_box, 
+    x = 0.60,            
+    y = 0.20, 
+    width = 0.10,       
+    height = 0.25
+  ) +
+  
+  # Source Legend
+  draw_grob(
+    source_legend_box, 
+    x = 0.02, 
+    y = 0.05, 
+    width = 0.20, 
+    height = 0.05
+  )
+
+# Export
+ggsave("figure_1e.png", fig1e, width = 14, height = 10, units = "in", dpi = 600)
+```
+

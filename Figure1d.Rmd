@@ -1,0 +1,175 @@
+---
+title: "Figure 1d"
+author: "JuHyeongYu"
+date: "2026-03-07"
+output: html_document
+---
+
+```{r}
+
+
+
+# 1. Load required packages and data
+
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(ggpubr)
+
+suppl1_b_raw <- read_excel('/Users/zzuhyeong2/Documents/JoonAhn_Lab/Project1/41467_2024_54434_MOESM5_ESM.xlsx', sheet = 2)
+
+# 2. Data Integration and Preprocessing
+suppl1_b_processed <- suppl1_b_raw %>%
+  mutate(
+    # Mapping raw clinical variables to simplified labels
+    clinical_variable = recode(Clinical.variable,
+                               "Histology:AD"    = "AD", "Histology:SC" = "SC",
+                               "Female"          = "Female", "Smoking:History" = "Smoking",
+                               "PathologicN"     = "PathN", "TIL_brisk" = "TIL",
+                               "WGD"             = "WGD", "TP53" = "TP53",
+                               "TSG"             = "Other tumor suppressor genes",
+                               "EGFR(L858R)"     = "EGFR", "EGFR(inframe)" = "EGFR",
+                               "OCG_mut"         = "Other oncogenes", 
+                               "OCG_amp"         = "Other oncogenes", 
+                               "OCG_fus"         = "Other oncogenes"
+    ),
+    # Pre-calculating percentage and log2(OR)
+    percentage_val = `% of Samples in Subtype` * 100,
+    log2OR_val = log2(OR),
+    Subtype_Label = paste("Subtype", Subtype)
+  ) %>%
+  # Filter only target clinical variables
+  filter(clinical_variable %in% c("AD", "SC", "Female", "Smoking", "PathN", "TIL", 
+                                  "TP53", "Other tumor suppressor genes", "EGFR", "Other oncogenes")) %>%
+  
+  # [Representative Selection Logic] Select the most significant hit (min p-value) per group
+  group_by(Subtype_Label, clinical_variable) %>%
+  slice_min(order_by = p, n = 1, with_ties = FALSE) %>% 
+  ungroup() %>%
+  
+  # Rename columns to match the visualization script
+  rename(
+    p_min = p,
+    log2OR_avg = log2OR_val,
+    percentage = percentage_val
+  )
+
+# 3. Final Formatting for Plotting (Applying labels and scaling)
+suppl1_b_custom <- suppl1_b_processed %>%
+  mutate(
+    # Workaround for Histology label with indentation
+    display_name = recode(clinical_variable,
+                          "AD" = "AD\n \u00A0 \u00A0 \u00A0 \u00A0 \u00A0 \u00A0 \u00A0 Histology",
+                          "SC" = "SC",
+                          "Female" = "Female",
+                          "Smoking" = "\nSmoking",
+                          "PathN" = "PathN",
+                          "TIL" = "TIL",
+                          "TP53" = "TP53",
+                          "Other tumor suppressor genes" = "\nOther tumor\nsuppressor\ngenes",
+                          "EGFR" = "EGFR",
+                          "Other oncogenes" = "\nOther\noncogenes"),
+    display_name = factor(display_name, levels = c(
+      "AD\n \u00A0 \u00A0 \u00A0 \u00A0 \u00A0 \u00A0 \u00A0 Histology", "SC", "Female", "\nSmoking", "PathN", "TIL", "TP53", 
+      "\nOther tumor\nsuppressor\ngenes", "EGFR", "\nOther\noncogenes")),
+    Subtype_Label = factor(Subtype_Label, levels = rev(c("Subtype 1", "Subtype 2", "Subtype 3", "Subtype 4", "Subtype 5")))
+  ) %>%
+  mutate(
+    x_num = as.numeric(display_name),
+    y_num = as.numeric(Subtype_Label),
+    
+    # [Significance Cut-off] Color only if p < 0.05
+    log2OR_final = case_when(
+      p_min < 0.05 & is.infinite(log2OR_avg) & log2OR_avg > 0 ~ 4,
+      p_min < 0.05 & is.infinite(log2OR_avg) & log2OR_avg < 0 ~ -4,
+      p_min < 0.05 ~ log2OR_avg,
+      TRUE ~ NA_real_  
+    ),
+    
+    # Rectangle size scaling
+    box_size_x = scales::rescale(percentage, to = c(0.06, 0.34), from = c(0, 100)),
+    box_size_y = scales::rescale(percentage, to = c(0.05, 0.26), from = c(0, 100)),
+    xmin = x_num - box_size_x, xmax = x_num + box_size_x,
+    ymin = y_num - box_size_y, ymax = y_num + box_size_y,
+    sig_label = ifelse(p_min < 0.05, "*", "")
+  )
+
+# 4. Final Plotting with User-defined Settings
+fig1d <- ggplot(suppl1_b_custom) +
+  geom_tile(aes(x = display_name, y = Subtype_Label), 
+            color = "grey90", fill = "white", lwd = 0.2) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, 
+                fill = log2OR_final), 
+            color = "black", linewidth = 0.2) +
+  geom_text(aes(x = x_num, y = y_num, label = sig_label), 
+            color = "black", size = 5.5, vjust = 0.7, fontface = "bold") +
+  geom_point(aes(x = display_name, y = Subtype_Label, size = percentage), alpha = 0) +
+  
+  coord_fixed(ratio = 1.7) +
+  scale_x_discrete(position = "bottom") +
+  
+  scale_fill_gradient2(
+    low = "#2166CF", mid = "white", high = "#F04E37", 
+    midpoint = 0, limits = c(-4, 4), oob = squish,
+    na.value = "transparent", 
+    name = expression(bold("OR (log"["2"]*")"))) +
+  
+  scale_size_continuous(
+    range = c(1, 7), 
+    breaks = c(0, 25, 50, 75),
+    limits = c(0, 100),
+    name = "Samples (%)") +
+  
+  theme_pubr() +
+  theme(
+    axis.text.x = element_text(color = "black", face = "plain", size = 12, angle = 0, vjust = 1, lineheight = 0.9),
+    axis.text.y = element_text(color = "black", face = "plain", size = 13),
+    axis.ticks.x = element_line(color = "black"),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    panel.grid = element_blank(),
+    
+    legend.position = "top",
+    legend.justification = "left", 
+    legend.box = "horizontal",
+    legend.direction = "horizontal",
+    
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 11),
+    legend.key.size = unit(1.5, "cm"), 
+    legend.spacing.x = unit(0.5, "cm"),
+    legend.margin = margin(t = 10, r = 0, b = 10, l = 0),
+    
+    plot.tag = element_text(size = 25, face = "bold", color = "black"), 
+    plot.tag.position = "topleft"
+  ) +
+  guides(
+    fill = guide_colorbar(
+      title.position = "top", 
+      title.hjust = 0, 
+      barwidth = 13, 
+      barheight = 2,
+      frame.colour = "black", 
+      frame.linewidth = 0.5,
+      ticks.colour = "black",
+      order = 1
+    ),
+    size = guide_legend(
+      title.position = "top", 
+      title.hjust = 0, 
+      override.aes = list(shape = 22, fill = "white", color = "black", alpha = 1, stroke = 1, size = 8), 
+      order = 2
+    )
+  ) +
+  labs(title = NULL, x = NULL, y = NULL)
+
+ggsave("Figure_1d.png", 
+       plot = fig1d, 
+       width = 14, 
+       height = 8, 
+       units = "in", 
+       dpi = 300)
+```
+
+

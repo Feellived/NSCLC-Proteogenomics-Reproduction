@@ -1,0 +1,156 @@
+---
+title: "Figure 1a"
+author: "JuHyeongYu"
+date: "2026-03-05"
+output: html_document
+---
+
+Figure 1a
+
+```{r}
+# Load necessary libraries
+
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+
+# Load the data from Supplementary Data 1
+
+suppl1_a <- read_excel('/Users/zzuhyeong2/Documents/JoonAhn_Lab/Project1/41467_2024_54434_MOESM5_ESM.xlsx', sheet = 1)
+
+# Verify the basic cohort numbers
+
+table(suppl1_a$DX)
+table(suppl1_a$AJCC.8th.TNMstage)
+table(suppl1_a$Pathologic.N)
+table(suppl1_a$Adjuvant.Treatment)
+table(suppl1_a$Adjuvant.Treatment, suppl1_a$Recur.status, useNA = "always")
+
+```
+
+```{r}
+# First Figure of Figure 1a
+
+# 1. Data Preprocessing
+# Convert DX and Recurrence_status to factors with specific levels for correct ordering
+# Reference paper order: AD, SC, MA, NC, Others 
+
+suppl1_a$DX <- factor(suppl1_a$DX, levels = c("AD", "SC", "MA", "NC", "Others"))
+
+# 2. Plotting
+
+fig1a_1 <- ggplot(suppl1_a, aes(x = DX, fill = DX)) +
+  geom_bar(stat = "count", color = "black", linewidth = 0.3, width = 0.9, alpha = 0.7) +
+  theme_pubr() +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(title = NULL, x = NULL, y = NULL) +
+  theme(legend.position = "none") +
+  stat_count(geom = "text", aes(label = ..count..), vjust = -0.5, size = 7)
+
+fig1a_1
+```
+
+```{r}
+# 1. Data Preprocessing
+suppl1_a$AJCC.8th.TNMstage <- factor(suppl1_a$AJCC.8th.TNMstage, 
+                                    levels = c("IA1", "IA2", "IA3", "IB", 
+                                               "IIA", "IIB", "IIIA", "IIIB", "IVA"))
+
+# 2. Plotting
+fig1a_2 <- ggplot(suppl1_a, aes(x = AJCC.8th.TNMstage, fill = AJCC.8th.TNMstage)) +
+  geom_bar(stat = "count", color = "black", linewidth = 0.3, width = 0.9) + 
+  # direction = -1 reverses the color scale (from yellow to dark purple)
+  scale_fill_viridis_d(option = "viridis", direction = -1) +  
+  theme_pubr() +
+  # Remove axis titles for a cleaner, publication-ready look
+  labs(title = NULL, x = NULL, y = NULL) + 
+  theme(legend.position = "none") + 
+  geom_text(stat = "count", aes(label = after_stat(count)), 
+            vjust = -0.5, size = 5, color = "black") 
+
+fig1a_2
+```
+```{r}
+# 1. Data Preprocessing 
+suppl1_a$Pathologic.N <- factor(suppl1_a$Pathologic.N, levels = c("N0", "N1", "N2"))
+
+# 2. Custom Colors: Matching the original paper's palette for Panel 3
+fig1a_3_col <- c("N0" = "#E2E2E2", "N1" = "#9A9A71", "N2" = "#B06A73")
+
+# 3. Plotting
+fig1a_3 <- ggplot(suppl1_a, aes(x = Pathologic.N, fill = Pathologic.N)) +
+  geom_bar(stat = "count", color = "black", linewidth = 0.4, width = 0.9) + 
+  scale_fill_manual(values = fig1a_3_col) +  
+  theme_pubr() + 
+  labs(title = NULL, x = NULL, y = NULL) + 
+  theme(
+    legend.position = "none") +
+  geom_text(stat = "count", aes(label = after_stat(count)), 
+            vjust = -0.5, size = 7, color = "black")
+
+
+fig1a_3
+```
+```{r}
+
+# 1. Data Preprocessing 
+suppl1_a <- suppl1_a %>% 
+  # Filter out rows where Recur.status is NA
+  filter(!is.na(Recur.status)) %>% 
+  # String replacement: Change "&" to "+"
+  mutate(Adjuvant.Treatment = gsub("CTx & RTx", "CTx+RTx", Adjuvant.Treatment, fixed = TRUE), 
+    Adjuvant.Treatment = factor(Adjuvant.Treatment, 
+                                 levels = c("CTx+RTx", "RTx", "CTx", "None")),
+    # Recode Recur.status: 1 to "Recur", 0 to "None"
+    Recur.status = factor(Recur.status, 
+                          levels = c(0, 1), 
+                          labels = c("None", "Recur"))
+  )
+
+# 2. Custom Colors                            
+                               
+recur_colors <- c("Recur" = "#E17070", "None" = "#C0C0C0")
+
+# 3. Plotting 
+
+fig1a_4 <- ggplot(suppl1_a, aes(x = Adjuvant.Treatment, fill = Recur.status)) +
+  geom_bar(stat = "count", color = "black", linewidth = 0.4, width = 0.9) + 
+  scale_fill_manual(values = recur_colors) +
+  theme_pubr() +
+  labs(title = NULL, x = NULL, y = NULL) +
+  theme(legend.title = element_blank(),
+        legend.position = c(0.2, 0.9), 
+        legend.direction = "vertical") +
+  geom_text(stat = "count", aes(label = after_stat(count)), 
+            position = position_stack(vjust = 0.5), 
+            size = 8, color = "black")
+
+fig1a_4
+
+```
+```{r}
+# 1. Load Patchwork Library
+
+library(patchwork)
+
+# 2. Combine all 4 panels horizontally
+
+fig1a <- (fig1a_1 | fig1a_2 | fig1a_3 | fig1a_4) + 
+  plot_layout(widths = c(1, 1, 1, 1.2)) & 
+  theme(
+    plot.margin = margin(25, 5, 10, 5), 
+    axis.text.y = element_text(size = 10)
+  )
+
+ggsave("Figure_1a.png", 
+       plot = fig1a, 
+       width = 14, 
+       height = 8, 
+       units = "in", 
+       dpi = 300)
+
+fig1a
+```
+
+
